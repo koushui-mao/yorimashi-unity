@@ -311,7 +311,37 @@ namespace Yorimashi.Modder.Editor
             if (v == null) { sb.Append("null"); return; }
             if (v is string s) { sb.Append(YorimashiEnvelope.EncodeString(s)); return; }
             if (v is bool b) { sb.Append(b ? "true" : "false"); return; }
-            if (v is int || v is long || v is float || v is double) { sb.Append(v.ToString()); return; }
+            if (v is int || v is long) { sb.Append(v.ToString()); return; }
+            if (v is float f)
+            {
+                if (float.IsNaN(f) || float.IsInfinity(f)) { sb.Append("null"); return; }
+                sb.Append(f.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            }
+            if (v is double d)
+            {
+                if (double.IsNaN(d) || double.IsInfinity(d)) { sb.Append("null"); return; }
+                sb.Append(d.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            }
+            if (v is Dictionary<string, object> nested)
+            {
+                AppendDict(sb, nested);
+                return;
+            }
+            if (v is System.Collections.IEnumerable enumerable && !(v is string))
+            {
+                sb.Append('[');
+                bool first = true;
+                foreach (var item in enumerable)
+                {
+                    if (!first) sb.Append(',');
+                    first = false;
+                    AppendValue(sb, item);
+                }
+                sb.Append(']');
+                return;
+            }
             // fallback: string 化
             sb.Append(YorimashiEnvelope.EncodeString(v.ToString()));
         }
