@@ -1,0 +1,24 @@
+{
+  "name": "com.yorimashi.modder",
+  "displayName": "Yorimashi Modder",
+  "version": "0.3.0-m3e.3",
+  "unity": "2022.3",
+  "description": "Yorimashi VRChat avatar modding assistant (Editor plugin). Distributed via private UPM registry. Auto-update supported.",
+  "author": {
+    "name": "Yorimashi",
+    "url": "https://koushui.online"
+  },
+  "keywords": [
+    "vrchat",
+    "avatar",
+    "modding",
+    "mcp",
+    "yorimashi"
+  ],
+  "dependencies": {},
+  "hideInEditor": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koushui-mao/yorimashi"
+  }
+}
