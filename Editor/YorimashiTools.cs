@@ -242,6 +242,28 @@ namespace Yorimashi.Modder.Editor
                 },
                 batchTool.Execute);
 
+            // ---- M3-E transform/set (真改动 tool, 单个 GO) --------
+            var transformSetTool = new TransformSetTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = transformSetTool.ToolName,
+                    description = "Set Transform (position/rotation/scale) on a GameObject at path. Real write tool. Rotation is Euler degrees. All three fields optional (change only what you pass). Scale components must be > 0. Space: 'local' (default) or 'world' (scale is always local). Scope guard requires path prefix Ramune_test/, WriteTest/, or Yorimashi_WriteTest/ for apply.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"path\"],\"properties\":{" +
+                        "\"path\":{\"type\":\"string\"}," +
+                        "\"position\":{\"type\":\"object\",\"properties\":{" +
+                        "\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}}}," +
+                        "\"rotation\":{\"type\":\"object\",\"properties\":{" +
+                        "\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}}}," +
+                        "\"scale\":{\"type\":\"object\",\"properties\":{" +
+                        "\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}}}," +
+                        "\"space\":{\"type\":\"string\",\"enum\":[\"local\",\"world\"],\"default\":\"local\"}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                transformSetTool.Execute);
+
             // ---- M3-C 只读 tool (component 深读 + material lilToon 参数) --------
             YorimashiToolRegistry.Register(
                 new ToolInfo
