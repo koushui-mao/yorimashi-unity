@@ -319,6 +319,99 @@ namespace Yorimashi.Modder.Editor
                 },
                 prefabInstTool.Execute);
 
+            // ---- M3-E part5 Animator 五件套 --------
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = "animator/list_layers",
+                    description = "List AnimatorController structure: parameters, layers (with default state), states per layer (name/motion/speed/writeDefaults), and transitions (with conditions). Read-only. Pass either 'assetPath' (Assets/.../XXX.controller) or 'avatarPath' (scene GO path with an Animator component whose runtimeAnimatorController is an AnimatorController).",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"properties\":{" +
+                        "\"assetPath\":{\"type\":\"string\",\"description\":\"Assets/.../XXX.controller\"}," +
+                        "\"avatarPath\":{\"type\":\"string\",\"description\":\"scene GO path with an Animator component\"}" +
+                        "}}",
+                },
+                AnimatorListTool.Execute);
+
+            var animAddParam = new AnimatorAddParameterTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = animAddParam.ToolName,
+                    description = "Add a parameter (Bool/Int/Float/Trigger) to an AnimatorController. Real write tool. controllerPath must be under a whitelisted sandbox directory (Assets/Ramune_test/, Assets/WriteTest/, Assets/Yorimashi_WriteTest/). Refuses duplicate parameter names. Backup written to Library/yorimashi_oplog/backups/animator_<ts>/.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"controllerPath\",\"parameterName\",\"parameterType\"],\"properties\":{" +
+                        "\"controllerPath\":{\"type\":\"string\"}," +
+                        "\"parameterName\":{\"type\":\"string\"}," +
+                        "\"parameterType\":{\"type\":\"string\",\"enum\":[\"Bool\",\"Int\",\"Float\",\"Trigger\"]}," +
+                        "\"defaultValue\":{\"description\":\"bool for Bool/Trigger; number for Int/Float; ignored for Trigger\"}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                animAddParam.Execute);
+
+            var animAddLayer = new AnimatorAddLayerTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = animAddLayer.ToolName,
+                    description = "Add a new layer to an AnimatorController (appended to end). Real write tool. Creates the layer's stateMachine sub-asset (AddObjectToAsset) so it persists in the .controller file. Refuses duplicate layer names.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"controllerPath\",\"layerName\"],\"properties\":{" +
+                        "\"controllerPath\":{\"type\":\"string\"}," +
+                        "\"layerName\":{\"type\":\"string\"}," +
+                        "\"defaultWeight\":{\"type\":\"number\",\"default\":1.0,\"minimum\":0,\"maximum\":1}," +
+                        "\"blendingMode\":{\"type\":\"string\",\"enum\":[\"Override\",\"Additive\"],\"default\":\"Override\"}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                animAddLayer.Execute);
+
+            var animAddState = new AnimatorAddStateTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = animAddState.ToolName,
+                    description = "Add an AnimatorState to a specified layer. Optional AnimationClip via motionAssetPath (Assets/.../XXX.anim). If the layer has no default state yet, the new state becomes default (Unity's own behavior). Use makeDefault to force / prevent. Refuses duplicate state names within the same layer.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"controllerPath\",\"layerName\",\"stateName\"],\"properties\":{" +
+                        "\"controllerPath\":{\"type\":\"string\"}," +
+                        "\"layerName\":{\"type\":\"string\"}," +
+                        "\"stateName\":{\"type\":\"string\"}," +
+                        "\"motionAssetPath\":{\"type\":\"string\",\"description\":\"Assets/.../XXX.anim (optional)\"}," +
+                        "\"speed\":{\"type\":\"number\",\"default\":1.0}," +
+                        "\"writeDefaultValues\":{\"type\":\"boolean\",\"default\":true}," +
+                        "\"makeDefault\":{\"type\":\"boolean\",\"description\":\"omit to let Unity auto-decide (first state = default)\"}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                animAddState.Execute);
+
+            var animAddTrans = new AnimatorAddTransitionTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = animAddTrans.ToolName,
+                    description = "Add a transition between two states in a specified layer, with optional conditions. toStateName can be '(exit)' to add an Exit transition. Each condition: {parameter, mode: Equals|NotEqual|Greater|Less|If|IfNot, threshold}. All referenced parameters must exist on the controller.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"controllerPath\",\"layerName\",\"fromStateName\",\"toStateName\"],\"properties\":{" +
+                        "\"controllerPath\":{\"type\":\"string\"}," +
+                        "\"layerName\":{\"type\":\"string\"}," +
+                        "\"fromStateName\":{\"type\":\"string\"}," +
+                        "\"toStateName\":{\"type\":\"string\",\"description\":\"target state name, or '(exit)' for Exit transition\"}," +
+                        "\"hasExitTime\":{\"type\":\"boolean\",\"default\":false}," +
+                        "\"exitTime\":{\"type\":\"number\",\"default\":0.0}," +
+                        "\"duration\":{\"type\":\"number\",\"default\":0.0}," +
+                        "\"conditions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"required\":[\"parameter\",\"mode\"],\"properties\":{" +
+                        "\"parameter\":{\"type\":\"string\"}," +
+                        "\"mode\":{\"type\":\"string\",\"enum\":[\"Equals\",\"NotEqual\",\"Greater\",\"Less\",\"If\",\"IfNot\"]}," +
+                        "\"threshold\":{\"type\":\"number\",\"default\":0.0}" +
+                        "}}}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                animAddTrans.Execute);
+
             // ---- M3-C 只读 tool (component 深读 + material lilToon 参数) --------
             YorimashiToolRegistry.Register(
                 new ToolInfo
