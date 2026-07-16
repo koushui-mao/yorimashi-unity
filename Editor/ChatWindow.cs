@@ -247,23 +247,17 @@ namespace Yorimashi.Modder.Editor
         internal static class Version
         {
             // 保持与 package.json 手动同步。UpdateChecker 会在启动时比对私有 registry 最新版。
-            public const string Text = "0.4.0-m3e.6";
+            public const string Text = "0.4.0-m3e.7";
             public const string PackageName = "com.yorimashi.modder";
             public const string RegistryUrl = "https://yorimashi.koushui.online/registry/";
         }
 
-        // -------- 更新条 UI（M3-D） --------
-        // Unity 启动时 UpdateChecker 已经跑过 Search，这里只渲染结果。
-        // 不阻塞、不弹窗，用户点击才升级。
+        // -------- 更新条 UI (v0.5.0 起改为 VPM 提示模式) --------
+        // 之前 v0.3.x-v0.4.x 版本的一键更新会自研 OTA 覆盖 Packages/,
+        // Windows 上会卡 Unity "Importing assets" 死循环 (2026-07-16 实测 15 分钟)。
+        // 现在改成: 有新版 → 提示用户去 ALCOM 更新, 完全不改自己的文件。
         private void DrawUpdateBanner()
         {
-            if (UpdateChecker.IsInstalling)
-            {
-                DrawBanner("正在安装最新版... Unity 会在完成后自动重载编辑器域",
-                    new Color(0.35f, 0.55f, 0.85f));
-                return;
-            }
-
             if (UpdateChecker.HasUpdate)
             {
                 var latest = UpdateChecker.LatestVersion;
@@ -272,21 +266,13 @@ namespace Yorimashi.Modder.Editor
                     var oldColor = GUI.color;
                     GUI.color = new Color(1f, 0.5f, 0.3f);
                     EditorGUILayout.LabelField(
-                        $"有新版本 v{latest}（当前 v{Version.Text}）",
+                        $"有新版本 v{latest}（当前 v{Version.Text}）— 请在 ALCOM 中更新",
                         EditorStyles.boldLabel,
                         GUILayout.ExpandWidth(true));
                     GUI.color = oldColor;
-                    if (GUILayout.Button("一键更新", GUILayout.Width(90), GUILayout.Height(22)))
+                    if (GUILayout.Button("如何更新?", GUILayout.Width(90), GUILayout.Height(22)))
                     {
-                        if (EditorUtility.DisplayDialog(
-                                "Yorimashi Modder 更新",
-                                $"将从 v{Version.Text} 升级到 v{latest}。\n\n" +
-                                "Unity 会自动重载编辑器域（大约 15 秒）。\n" +
-                                "请先保存场景。是否继续？",
-                                "更新", "取消"))
-                        {
-                            UpdateChecker.InstallLatest();
-                        }
+                        UpdateChecker.ShowUpdateInstructions();
                     }
                     if (GUILayout.Button("×", GUILayout.Width(22), GUILayout.Height(22)))
                     {
@@ -298,9 +284,7 @@ namespace Yorimashi.Modder.Editor
                 return;
             }
 
-            // 无更新时不显示任何东西（更干净）。若想显示"已是最新"可打开下面：
-            // if (UpdateChecker.HasCheckedThisSession && string.IsNullOrEmpty(UpdateChecker.LastError))
-            //     DrawBanner("已是最新版本", new Color(0.4f, 0.75f, 0.4f));
+            // 无更新时不显示任何东西（更干净）。
         }
 
         private static void DrawBanner(string msg, Color tint)

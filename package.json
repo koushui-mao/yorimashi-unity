@@ -1,7 +1,7 @@
 {
   "name": "com.yorimashi.modder",
   "displayName": "Yorimashi Modder",
-  "version": "0.4.0-m3e.6",
+  "version": "0.4.0-m3e.7",
   "unity": "2022.3",
   "description": "Yorimashi VRChat avatar modding assistant (Editor plugin). Distributed via private UPM registry. Auto-update supported.",
   "author": {
