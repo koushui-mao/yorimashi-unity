@@ -247,7 +247,7 @@ namespace Yorimashi.Modder.Editor
         internal static class Version
         {
             // 保持与 package.json 手动同步。UpdateChecker 会在启动时比对私有 registry 最新版。
-            public const string Text = "0.4.0-m3e.10";
+            public const string Text = "0.5.0";
             public const string PackageName = "com.yorimashi.modder";
             public const string RegistryUrl = "https://yorimashi.koushui.online/registry/";
         }

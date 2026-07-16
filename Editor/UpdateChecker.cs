@@ -321,6 +321,8 @@ namespace Yorimashi.Modder.Editor
             if (a == b) return 0;
             if (string.IsNullOrEmpty(a)) return -1;
             if (string.IsNullOrEmpty(b)) return 1;
+
+            // 主版本 X.Y.Z 逐段整数比
             var aMain = a.Split('-')[0].Split('+')[0];
             var bMain = b.Split('-')[0].Split('+')[0];
             var aParts = aMain.Split('.');
@@ -331,13 +333,40 @@ namespace Yorimashi.Modder.Editor
                 int bn = i < bParts.Length && int.TryParse(bParts[i], out var bv) ? bv : 0;
                 if (an != bn) return an.CompareTo(bn);
             }
-            // 主版本相同: 无 pre-release > 有 pre-release
+
+            // 主版本相同: pre-release 段比较
             bool aPre = a.Contains("-");
             bool bPre = b.Contains("-");
             if (aPre && !bPre) return -1;
             if (!aPre && bPre) return 1;
-            if (aPre && bPre) return string.Compare(a, b, StringComparison.Ordinal);
-            return 0;
+            if (!aPre && !bPre) return 0;
+
+            // 双方都有 pre-release: 按 SemVer 2.0.0 规则逐段比
+            // 每段用 '.' 分隔; 纯数字段按整数比 (m3e.10 > m3e.9), 其他按 Ordinal 字符串比
+            var aPreStr = a.Substring(a.IndexOf('-') + 1);
+            var bPreStr = b.Substring(b.IndexOf('-') + 1);
+            var aPreParts = aPreStr.Split('.');
+            var bPreParts = bPreStr.Split('.');
+            for (int i = 0; i < Math.Min(aPreParts.Length, bPreParts.Length); i++)
+            {
+                var ap = aPreParts[i];
+                var bp = bPreParts[i];
+                bool aIsNum = int.TryParse(ap, out var aNum);
+                bool bIsNum = int.TryParse(bp, out var bNum);
+                if (aIsNum && bIsNum)
+                {
+                    if (aNum != bNum) return aNum.CompareTo(bNum);
+                }
+                else if (aIsNum) return -1; // 数字段 < 字符串段 (SemVer 规则)
+                else if (bIsNum) return 1;
+                else
+                {
+                    int cmp = string.Compare(ap, bp, StringComparison.Ordinal);
+                    if (cmp != 0) return cmp;
+                }
+            }
+            // 前缀相同, 段数多的更大 (e.g. "m3e.1.2" > "m3e.1")
+            return aPreParts.Length.CompareTo(bPreParts.Length);
         }
     }
 }
