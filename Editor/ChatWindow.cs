@@ -247,36 +247,69 @@ namespace Yorimashi.Modder.Editor
         internal static class Version
         {
             // 保持与 package.json 手动同步。UpdateChecker 会在启动时比对私有 registry 最新版。
-            public const string Text = "0.4.0-m3e.7";
+            public const string Text = "0.4.0-m3e.8";
             public const string PackageName = "com.yorimashi.modder";
             public const string RegistryUrl = "https://yorimashi.koushui.online/registry/";
         }
 
-        // -------- 更新条 UI (v0.5.0 起改为 VPM 提示模式) --------
-        // 之前 v0.3.x-v0.4.x 版本的一键更新会自研 OTA 覆盖 Packages/,
-        // Windows 上会卡 Unity "Importing assets" 死循环 (2026-07-16 实测 15 分钟)。
-        // 现在改成: 有新版 → 提示用户去 ALCOM 更新, 完全不改自己的文件。
+        // -------- 更新条 UI (v0.5.0: 冷启动更新) --------
+        // 三态: (1) 未下载新版 (2) 下载中 (3) 已下载, 等下次开 Unity 生效
         private void DrawUpdateBanner()
         {
+            var pending = UpdateChecker.PendingVersion;
+            if (!string.IsNullOrEmpty(pending))
+            {
+                // 状态 3: 已下载, 等冷启动
+                using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+                {
+                    var oldColor = GUI.color;
+                    GUI.color = new Color(0.4f, 0.75f, 0.4f);
+                    EditorGUILayout.LabelField(
+                        $"✅ 已下载 v{pending} — 下次开 Unity 时自动生效 (无需操作)",
+                        EditorStyles.boldLabel,
+                        GUILayout.ExpandWidth(true));
+                    GUI.color = oldColor;
+                }
+                EditorGUILayout.Space(2);
+                return;
+            }
+
+            if (UpdateChecker.IsDownloading)
+            {
+                // 状态 2: 下载中
+                using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+                {
+                    var oldColor = GUI.color;
+                    GUI.color = new Color(0.35f, 0.55f, 0.85f);
+                    EditorGUILayout.LabelField(
+                        "⏬ 后台下载新版本中...",
+                        EditorStyles.boldLabel,
+                        GUILayout.ExpandWidth(true));
+                    GUI.color = oldColor;
+                }
+                EditorGUILayout.Space(2);
+                return;
+            }
+
             if (UpdateChecker.HasUpdate)
             {
+                // 状态 1: 检测到新版, 未下载
                 var latest = UpdateChecker.LatestVersion;
                 using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
                 {
                     var oldColor = GUI.color;
-                    GUI.color = new Color(1f, 0.5f, 0.3f);
+                    GUI.color = new Color(1f, 0.65f, 0.3f);
                     EditorGUILayout.LabelField(
-                        $"有新版本 v{latest}（当前 v{Version.Text}）— 请在 ALCOM 中更新",
+                        $"发现新版 v{latest}（当前 v{Version.Text}）",
                         EditorStyles.boldLabel,
                         GUILayout.ExpandWidth(true));
                     GUI.color = oldColor;
-                    if (GUILayout.Button("如何更新?", GUILayout.Width(90), GUILayout.Height(22)))
+                    if (GUILayout.Button("下载更新", GUILayout.Width(90), GUILayout.Height(22)))
                     {
-                        UpdateChecker.ShowUpdateInstructions();
+                        UpdateChecker.StartDownload();
                     }
                     if (GUILayout.Button("×", GUILayout.Width(22), GUILayout.Height(22)))
                     {
-                        // 忽略这次会话；重开 Unity 会再检查一次
                         UnityEditor.SessionState.EraseString("Yorimashi.UpdateChecker.LatestVersion");
                     }
                 }
@@ -284,7 +317,7 @@ namespace Yorimashi.Modder.Editor
                 return;
             }
 
-            // 无更新时不显示任何东西（更干净）。
+            // 无更新时不显示任何东西
         }
 
         private static void DrawBanner(string msg, Color tint)
