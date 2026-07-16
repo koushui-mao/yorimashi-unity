@@ -264,6 +264,61 @@ namespace Yorimashi.Modder.Editor
                 },
                 transformSetTool.Execute);
 
+            // ---- M3-E part4 三件套：component/add + component/set_property + prefab/instantiate --------
+            var componentAddTool = new ComponentAddTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = componentAddTool.ToolName,
+                    description = "Add a Component to a GameObject at path. Real write tool. typeName accepts short ('BoxCollider') or fully qualified ('UnityEngine.BoxCollider'). Optional 'properties' dict sets initial field values (partial success: component is added even if some props fail; propertiesFailed lists errors). Refuses [DisallowMultipleComponent] duplicates and 2D/3D physics conflicts. Refuses if target is inside Prefab Stage (would bake into prefab asset). Scope guard requires path prefix Ramune_test/, WriteTest/, or Yorimashi_WriteTest/ for apply.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"path\",\"typeName\"],\"properties\":{" +
+                        "\"path\":{\"type\":\"string\"}," +
+                        "\"typeName\":{\"type\":\"string\",\"description\":\"short (e.g. 'BoxCollider') or fully qualified ('UnityEngine.BoxCollider') Component subclass\"}," +
+                        "\"properties\":{\"type\":\"object\",\"description\":\"optional initial field values, applied after AddComponent; partial success allowed\",\"additionalProperties\":true}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                componentAddTool.Execute);
+
+            var componentSetPropTool = new ComponentSetPropertyTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = componentSetPropTool.ToolName,
+                    description = "Set a single property/field on a Component. Real write tool. Uses reflection when safe (bool/int/float/string/enum/Vector*/Color) and SerializedProperty for UnityEvent* and Object references (guaranteed persistence). Value coercion: number→float/int, {x,y,z}→Vector3, {r,g,b,a}→Color, {guid|assetPath}→UnityEngine.Object via AssetDatabase. When multiple Components of same type on a GO, use 0-based 'index'. Refuses Prefab Stage targets. Scope guard applies to apply.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"path\",\"typeName\",\"property\",\"value\"],\"properties\":{" +
+                        "\"path\":{\"type\":\"string\"}," +
+                        "\"typeName\":{\"type\":\"string\"}," +
+                        "\"index\":{\"type\":\"integer\",\"default\":0,\"description\":\"0-based when multiple Components of same type; default 0\"}," +
+                        "\"property\":{\"type\":\"string\"}," +
+                        "\"value\":{\"description\":\"JSON value; coerced against target field type\"}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                componentSetPropTool.Execute);
+
+            var prefabInstTool = new PrefabInstantiateTool();
+            YorimashiToolRegistry.Register(
+                new ToolInfo
+                {
+                    name = prefabInstTool.ToolName,
+                    description = "Instantiate a Prefab asset into the scene, preserving the prefab link (uses PrefabUtility.InstantiatePrefab). prefabPath accepts 'Assets/...' full path or bare unique prefab name. parentPath is REQUIRED — it must be under a whitelisted sandbox root (scope guard). Optional name/position/rotation/scale/space (local|world). Refuses if parent is in Prefab Stage or a sibling with the same name already exists (avoid hierarchy path collisions). rotation is Euler degrees; scale is always local.",
+                    inputSchemaJson =
+                        "{\"type\":\"object\",\"required\":[\"prefabPath\",\"parentPath\"],\"properties\":{" +
+                        "\"prefabPath\":{\"type\":\"string\",\"description\":\"'Assets/...' path or bare unique prefab name\"}," +
+                        "\"parentPath\":{\"type\":\"string\",\"description\":\"REQUIRED; scene hierarchy path under a whitelisted sandbox root\"}," +
+                        "\"name\":{\"type\":\"string\",\"description\":\"optional override; default prefab asset name\"}," +
+                        "\"position\":{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}}}," +
+                        "\"rotation\":{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}}}," +
+                        "\"scale\":{\"type\":\"object\",\"properties\":{\"x\":{\"type\":\"number\"},\"y\":{\"type\":\"number\"},\"z\":{\"type\":\"number\"}}}," +
+                        "\"space\":{\"type\":\"string\",\"enum\":[\"local\",\"world\"],\"default\":\"local\"}," +
+                        "\"dry_run\":{\"type\":\"boolean\",\"default\":true}" +
+                        "}}",
+                },
+                prefabInstTool.Execute);
+
             // ---- M3-C 只读 tool (component 深读 + material lilToon 参数) --------
             YorimashiToolRegistry.Register(
                 new ToolInfo
