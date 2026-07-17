@@ -150,6 +150,29 @@ namespace Yorimashi.Modder.Editor
             await SendEnvelopeAsync(env);
         }
 
+        // M5a: 发一条 chat.send req.
+        // 服务端 chat_orchestrator 接住 → 通过 chat.delta/tool_call/tool_result/done
+        // notif 事件流回, ChatWindow 在 OnEnvelope 里过滤 chat.* 分派 UI.
+        public async Task SendChatSendAsync(string conversationId, string content)
+        {
+            if (Status != WssStatus.Connected) throw new InvalidOperationException("not connected");
+            var cid = System.Threading.Interlocked.Increment(ref _correlationCounter).ToString();
+            var mcp = "{\"jsonrpc\":\"2.0\",\"id\":" + cid + ",\"method\":\"chat.send\",\"params\":{"
+                    + "\"conversation_id\":" + YorimashiEnvelope.EncodeString(conversationId)
+                    + ",\"content\":" + YorimashiEnvelope.EncodeString(content)
+                    + "}}";
+            var env = new Envelope
+            {
+                v = Envelope.Version,
+                sessionId = SessionId,
+                direction = "req",
+                correlationId = cid,
+                mcpJson = mcp,
+            };
+            Log("[send] req cid=" + cid + " method=chat.send conv=" + conversationId);
+            await SendEnvelopeAsync(env);
+        }
+
         // ---- Receive loop -------------------------------------------------
 
         private async Task ReceiveLoop(CancellationToken ct)

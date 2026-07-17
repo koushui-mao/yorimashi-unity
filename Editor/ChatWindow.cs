@@ -1,7 +1,9 @@
-// Yorimashi ChatWindow — M1-B2
-// URL + Connect/Disconnect + Send Ping + Show Tools + Log.
-// Sentinel: "M1-B2 CHATWINDOW"
+// Yorimashi ChatWindow — M1-B2 + M5a Chat
+// URL + Connect/Disconnect + Send Ping + Show Tools + Log + Chat tab.
+// Sentinel: "M5a CHATWINDOW"
+using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEditor;
 using UnityEngine;
 
@@ -10,30 +12,43 @@ namespace Yorimashi.Modder.Editor
     public class ChatWindow : EditorWindow
     {
         private const string MenuPath = "Window/Yorimashi Modder";
-        public const string SentinelTag = "M1-B2 CHATWINDOW";
+        public const string SentinelTag = "M5a CHATWINDOW";
         private const string PrefKeyUrl = "Yorimashi.Modder.WssUrl.v3";
+        private const string PrefKeyTab = "Yorimashi.Modder.Tab.v1";
         // 默认走 caddy TLS 反代 → 内网 :19871 (wss router)
         // 19871 端口本身不对公网开放 (ufw 挡)，只能走 https 443 → 反代进去。
         private const string DefaultUrl = "wss://yorimashi.koushui.online/hub/plugin?token=yoric50849e4034f3622dab2e12525";
         private const int MaxLogLines = 500;
+        private static readonly string[] TabNames = new[] { "Chat", "Legacy" };
 
         [MenuItem(MenuPath)]
         public static void ShowWindow()
         {
             var w = GetWindow<ChatWindow>("Yorimashi Modder");
-            w.minSize = new Vector2(480f, 320f);
+            w.minSize = new Vector2(520f, 400f);
         }
 
         // UI state
         private string _url;
         private Vector2 _logScroll;
+        private Vector2 _chatScroll;
         private readonly List<string> _logLines = new List<string>();
         private YorimashiWssClient _client;
         private WssStatus _status = WssStatus.Disconnected;
+        private int _tab = 0;
+
+        // M5a Chat state
+        private readonly List<ChatMessageView> _chatMessages = new List<ChatMessageView>();
+        private string _chatInput = "";
+        private string _chatConversationId;
+        private bool _chatBusy = false;   // 一轮进行中禁 send
+        private ChatMessageView _currentAssistantBubble;   // 正在流的 assistant 消息
 
         private void OnEnable()
         {
             _url = EditorPrefs.GetString(PrefKeyUrl, DefaultUrl);
+            _tab = EditorPrefs.GetInt(PrefKeyTab, 0);
+            _chatConversationId = "c-" + Guid.NewGuid().ToString("N").Substring(0, 8);
             AddLog("[init] Yorimashi Modder " + Version.Text + " ready. Sentinel=" + SentinelTag);
         }
 
@@ -49,6 +64,23 @@ namespace Yorimashi.Modder.Editor
             DrawUpdateBanner();
             EditorGUILayout.Space();
 
+            // M5a: tab 切换
+            var newTab = GUILayout.Toolbar(_tab, TabNames, GUILayout.Height(24));
+            if (newTab != _tab)
+            {
+                _tab = newTab;
+                EditorPrefs.SetInt(PrefKeyTab, _tab);
+            }
+            EditorGUILayout.Space(4);
+
+            if (_tab == 0)
+                DrawChatTab();
+            else
+                DrawLegacyTab();
+        }
+
+        private void DrawLegacyTab()
+        {
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUILayout.LabelField("Server URL:", GUILayout.Width(80));
@@ -173,6 +205,189 @@ namespace Yorimashi.Modder.Editor
             }
         }
 
+        // ================================================================
+        // M5a Chat Tab
+        // ================================================================
+        private void DrawChatTab()
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                var color = GUI.color;
+                GUI.color = StatusColor(_status);
+                EditorGUILayout.LabelField("● " + _status, EditorStyles.miniBoldLabel, GUILayout.Width(120));
+                GUI.color = color;
+                EditorGUILayout.LabelField("会话: " + (_chatConversationId ?? "-"), EditorStyles.miniLabel);
+                GUILayout.FlexibleSpace();
+                using (new EditorGUI.DisabledScope(_status == WssStatus.Connected || _status == WssStatus.Connecting))
+                {
+                    if (GUILayout.Button("Connect", GUILayout.Height(20), GUILayout.Width(80)))
+                    {
+                        Connect();
+                    }
+                }
+                if (GUILayout.Button("清空", GUILayout.Height(20), GUILayout.Width(50)))
+                {
+                    _chatMessages.Clear();
+                    _chatConversationId = "c-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                    _currentAssistantBubble = null;
+                    _chatBusy = false;
+                }
+            }
+            EditorGUILayout.Space(4);
+
+            // 消息列表
+            var listHeight = Mathf.Max(position.height - 200f, 200f);
+            using (var scroll = new EditorGUILayout.ScrollViewScope(_chatScroll, GUILayout.Height(listHeight)))
+            {
+                _chatScroll = scroll.scrollPosition;
+                foreach (var m in _chatMessages)
+                    DrawChatMessage(m);
+                // 输入或流式增加内容后自动滚到底
+                if (Event.current.type == EventType.Repaint)
+                    _chatScroll.y = float.MaxValue;
+            }
+
+            EditorGUILayout.Space(4);
+
+            // 输入框
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(_chatBusy))
+                {
+                    _chatInput = EditorGUILayout.TextArea(_chatInput ?? "",
+                        GUILayout.MinHeight(48), GUILayout.ExpandWidth(true));
+                }
+                using (new EditorGUILayout.VerticalScope(GUILayout.Width(90)))
+                {
+                    var canSend = !_chatBusy
+                                   && _status == WssStatus.Connected
+                                   && !string.IsNullOrWhiteSpace(_chatInput);
+                    using (new EditorGUI.DisabledScope(!canSend))
+                    {
+                        var oldBg = GUI.backgroundColor;
+                        GUI.backgroundColor = new Color(0.35f, 0.65f, 0.95f);
+                        if (GUILayout.Button(_chatBusy ? "..." : "发送", GUILayout.Height(48)))
+                        {
+                            SendChat();
+                        }
+                        GUI.backgroundColor = oldBg;
+                    }
+                }
+            }
+
+            if (_status != WssStatus.Connected)
+            {
+                EditorGUILayout.HelpBox("wss 未连接。切到 Legacy tab 点 Connect,或点上方 Connect 按钮.", MessageType.Info);
+            }
+        }
+
+        private void DrawChatMessage(ChatMessageView m)
+        {
+            var isUser = m.Role == "user";
+            var isTool = m.Role == "tool";
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (isUser) GUILayout.FlexibleSpace();
+                var style = new GUIStyle(EditorStyles.helpBox)
+                {
+                    padding = new RectOffset(10, 10, 8, 8),
+                    alignment = TextAnchor.UpperLeft,
+                    wordWrap = true,
+                    richText = true,
+                };
+                if (isUser) style.normal.textColor = new Color(0.85f, 0.95f, 1f);
+                if (isTool) style.normal.textColor = new Color(0.8f, 0.8f, 0.4f);
+
+                var maxWidth = Mathf.Max(200f, position.width * 0.75f);
+                var prefix = isUser ? "🧑 " : isTool ? "🔧 " : "🤖 ";
+                var body = string.IsNullOrEmpty(m.Text) ? "..." : m.Text;
+                GUILayout.Box(prefix + body, style, GUILayout.MaxWidth(maxWidth));
+                if (!isUser) GUILayout.FlexibleSpace();
+            }
+            EditorGUILayout.Space(2);
+        }
+
+        private void SendChat()
+        {
+            if (_client == null || _status != WssStatus.Connected)
+            {
+                AddLog("[chat] wss 未连接");
+                return;
+            }
+            var text = (_chatInput ?? "").Trim();
+            if (string.IsNullOrEmpty(text)) return;
+
+            _chatMessages.Add(new ChatMessageView { Role = "user", Text = text });
+            _chatBusy = true;
+            _chatInput = "";
+
+            _ = _client.SendChatSendAsync(_chatConversationId, text);
+            Repaint();
+        }
+
+        private void HandleChatDelta(Dictionary<string, object> p)
+        {
+            if (_currentAssistantBubble == null)
+            {
+                _currentAssistantBubble = new ChatMessageView { Role = "assistant", Text = "" };
+                _chatMessages.Add(_currentAssistantBubble);
+            }
+            var delta = p != null && p.TryGetValue("delta", out var dv) ? dv as Dictionary<string, object> : null;
+            if (delta != null && delta.TryGetValue("content", out var cv) && cv is string cs)
+            {
+                _currentAssistantBubble.Text += cs;
+            }
+        }
+
+        private void HandleToolCall(Dictionary<string, object> p)
+        {
+            var name = p != null && p.TryGetValue("name", out var nv) ? nv as string : "?";
+            var args = p != null && p.TryGetValue("arguments", out var av) ? av : null;
+            var argsStr = args == null ? "{}" : args.ToString();
+            _chatMessages.Add(new ChatMessageView {
+                Role = "tool",
+                Text = name + "\n    " + argsStr,
+            });
+            // 新的 assistant 气泡下一批 delta 起
+            _currentAssistantBubble = null;
+        }
+
+        private void HandleToolResult(Dictionary<string, object> p)
+        {
+            // 简单在最后一个 tool 气泡后附结果摘要
+            var result = p != null && p.TryGetValue("result", out var rv) ? rv : null;
+            var resultStr = result == null ? "(null)" : result.ToString();
+            if (resultStr.Length > 200) resultStr = resultStr.Substring(0, 200) + "…";
+            _chatMessages.Add(new ChatMessageView {
+                Role = "tool",
+                Text = "→ " + resultStr,
+            });
+        }
+
+        private void HandleChatDone(Dictionary<string, object> p)
+        {
+            var finish = p != null && p.TryGetValue("finish_reason", out var fv) ? fv as string : null;
+            if (finish == "error")
+            {
+                var err = p.TryGetValue("error", out var ev) ? ev as string : "unknown";
+                _chatMessages.Add(new ChatMessageView { Role = "assistant", Text = "❌ 错误: " + err });
+            }
+            _chatBusy = false;
+            _currentAssistantBubble = null;
+        }
+
+        // ChatMessageView 内部使用的气泡数据
+        [Serializable]
+        internal class ChatMessageView
+        {
+            public string Role;
+            public string Text;
+        }
+
+        // ================================================================
+        // (原有内容继续)
+        // ================================================================
+
         private void RunSelfTest()
         {
             AddLog("[selftest] 开始跑 M3-T2 只读 tool 自测（4 步）...");
@@ -210,9 +425,45 @@ namespace Yorimashi.Modder.Editor
             _client.OnStatusChanged += OnStatus;
             _client.OnLog += AddLog;
             _client.OnEnvelope += env =>
+            {
                 AddLog("[env] direction=" + env.direction + " cid=" + (env.correlationId ?? "-") + " mcp=" + Truncate(env.mcpJson, 80));
+                // M5a: notif direction 里 method=chat.* 转到 chat UI
+                if (env.direction == "notif" && !string.IsNullOrEmpty(env.mcpJson))
+                {
+                    DispatchChatNotif(env.mcpJson);
+                }
+            };
             _client.Connect();
             AddLog("[ui] connect requested → " + _url);
+        }
+
+        // M5a: 解析 notif mcp 里的 method / params 分派 chat.* handler
+        private void DispatchChatNotif(string mcpJson)
+        {
+            try
+            {
+                var mcp = new MiniJsonParser(mcpJson).ParseObject();
+                var method = mcp != null && mcp.TryGetValue("method", out var mv) ? mv as string : null;
+                if (string.IsNullOrEmpty(method) || !method.StartsWith("chat.")) return;
+                var paramsObj = mcp.TryGetValue("params", out var pv) ? pv as Dictionary<string, object> : null;
+                if (paramsObj == null) return;
+
+                EditorApplication.delayCall += () =>
+                {
+                    switch (method)
+                    {
+                        case "chat.delta": HandleChatDelta(paramsObj); break;
+                        case "chat.tool_call": HandleToolCall(paramsObj); break;
+                        case "chat.tool_result": HandleToolResult(paramsObj); break;
+                        case "chat.done": HandleChatDone(paramsObj); break;
+                    }
+                    Repaint();
+                };
+            }
+            catch (Exception e)
+            {
+                AddLog("[chat] dispatch notif failed: " + e.Message);
+            }
         }
 
         private void OnStatus(WssStatus s)
@@ -247,7 +498,7 @@ namespace Yorimashi.Modder.Editor
         internal static class Version
         {
             // 保持与 package.json 手动同步。UpdateChecker 会在启动时比对私有 registry 最新版。
-            public const string Text = "0.6.0";
+            public const string Text = "0.7.0";
             public const string PackageName = "com.yorimashi.modder";
             public const string RegistryUrl = "https://yorimashi.koushui.online/registry/";
         }
