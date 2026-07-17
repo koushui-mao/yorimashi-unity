@@ -1,4 +1,4 @@
-// Yorimashi Write Tool base class — M3-W1-D
+// Yorimashi Write Tool base class — M3-W1-D + M4-A0.2 Diagnostics
 //
 // 改动 tool 的抽象基类。子类只需实现 BuildPreview() + ApplyChanges()，
 // 基类负责：
@@ -6,18 +6,18 @@
 //   2. dry_run=true → 只调 BuildPreview，落 oplog(outcome=ok, dry_run=true)
 //   3. dry_run=false → 调 BuildPreview 得 changes → (M3-W1-E 起) 触发
 //      confirmation gate → approve 则 ApplyChanges → 落 oplog
-//      当前阶段 (W1-D)：gate 走客户端 sink（可选注入），未注入则直接执行
-//      并在 oplog 里标 confirmed_by="__gate_bypassed__"，便于 forensic 排查
-//   4. 抛异常 → 落 oplog(outcome=failed, error=...)
+//   4. 抛异常 → 落 oplog(outcome=failed, error=...) 并把 Diag snapshot 塞 envelope
+//   5. **M4-A0.2**: Execute 自动 Diag.Begin(toolName, requestId) + End；
+//      老 tool 不用 Diag.Step 也能跑（空快照 envelope 无 diag 字段）；
+//      新 tool 用 Diag.Step 时异常会带完整定位上下文。
 //
 // **红线**：任何真改动 tool 都必须继承这个基类，不能绕过。
-// M3-W1-E 起 test_m3_tool_schemas.py 会加静态检查（Write tool 必须
-// 走 WriteToolBase 通道）。
 //
-// Sentinel: "M3-W1-D WRITE TOOL BASE"
+// Sentinel: "M3-W1-D WRITE TOOL BASE + M4-A0.2 DIAG"
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Yorimashi.Modder.Editor.Diagnostics;
 
 namespace Yorimashi.Modder.Editor
 {
@@ -57,8 +57,38 @@ namespace Yorimashi.Modder.Editor
 
         /// <summary>
         /// Registry 直接 register 的入口。签名对齐 ToolHandler：(paramsJson) -> resultJson。
+        /// M4-A0.2: 自动 Diag.Begin(toolName, requestId)，异常时把 Snapshot 塞 envelope。
+        /// requestId 从 paramsJson 的 "_requestId" 字段抽（gateway 注入），缺失则自动分配。
         /// </summary>
         public string Execute(string paramsJson)
+        {
+            // M4-A0.2: 先解析出 requestId（如果 params 里带），用于 Diag.Begin。
+            //   注意：即使 paramsJson 完全非法这里也要能兜底不炸，requestId 缺失照跑。
+            string requestId = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(paramsJson) && paramsJson != "null")
+                {
+                    var probe = new MiniJsonParser(paramsJson).ParseObject();
+                    if (probe != null && probe.TryGetValue("_requestId", out var rid) && rid is string rs)
+                        requestId = rs;
+                }
+            }
+            catch { /* 解析失败就用自动分配 */ }
+            Diag.Begin(ToolName, requestId);
+
+            try
+            {
+                return ExecuteInner(paramsJson);
+            }
+            finally
+            {
+                // Snapshot 在 ExecuteInner 里的 error return 用；这里保证 context 清理。
+                Diag.End();
+            }
+        }
+
+        private string ExecuteInner(string paramsJson)
         {
             Dictionary<string, object> parsed;
             try
@@ -75,7 +105,7 @@ namespace Yorimashi.Modder.Editor
                     Tool = ToolName, ParamsJson = paramsJson, DryRun = true,
                     Outcome = "failed", Error = err,
                 });
-                return "{\"error\":" + YorimashiEnvelope.EncodeString(err) + "}";
+                return BuildErrorJson(err);
             }
 
             bool dryRun = true;  // W1-D 铁律：**默认 dry_run**
@@ -94,7 +124,7 @@ namespace Yorimashi.Modder.Editor
                     Tool = ToolName, ParamsJson = paramsJson, DryRun = dryRun,
                     Outcome = "failed", Error = "preview: " + e.Message,
                 });
-                return "{\"error\":" + YorimashiEnvelope.EncodeString("preview failed: " + e.Message) + "}";
+                return BuildErrorJson("preview failed: " + e.Message);
             }
 
             // dry_run 分支：只 log 不 apply
@@ -124,7 +154,7 @@ namespace Yorimashi.Modder.Editor
                     Outcome = "denied", Error = err,
                     BackupPath = preview.BackupPath,
                 });
-                return "{\"error\":" + YorimashiEnvelope.EncodeString(err) + "}";
+                return BuildErrorJson(err);
             }
 
             // **Asset Mutation Guard**（M3-C 新增，2026-07-14）
@@ -148,7 +178,7 @@ namespace Yorimashi.Modder.Editor
                         Outcome = "denied", Error = err,
                         BackupPath = preview.BackupPath,
                     });
-                    return "{\"error\":" + YorimashiEnvelope.EncodeString(err) + "}";
+                    return BuildErrorJson(err);
                 }
             }
 
@@ -166,7 +196,7 @@ namespace Yorimashi.Modder.Editor
                     Outcome = "failed", Error = "apply: " + e.Message,
                     BackupPath = preview.BackupPath,
                 });
-                return "{\"error\":" + YorimashiEnvelope.EncodeString("apply failed: " + e.Message) + "}";
+                return BuildErrorJson("apply failed: " + e.Message);
             }
 
             var okId = YorimashiOpLog.Append(new YorimashiOpLog.Entry
@@ -252,6 +282,29 @@ namespace Yorimashi.Modder.Editor
                    + "This is fail-close by design: any tool that touches shared assets must justify itself "
                    + "and constrain the target asset path/type. Refusing.";
             return false;
+        }
+
+        /// <summary>
+        /// M4-A0.2: 生成错误 envelope。自动附加 Diag snapshot（若有内容）。
+        /// 老 tool 不用 Diag.Step → snapshot 空 → 只带 error 字段（回归保护）。
+        /// 新 tool 用 Diag → snapshot 带完整 step/expect/actual/hints，客户日志可直接定位。
+        /// </summary>
+        private static string BuildErrorJson(string err)
+        {
+            var sb = new StringBuilder(256);
+            sb.Append('{');
+            sb.Append("\"error\":").Append(YorimashiEnvelope.EncodeString(err ?? ""));
+            var snap = Diag.Snapshot();
+            if (snap != null && snap.HasContent)
+            {
+                var diagJson = snap.ToJson();
+                if (!string.IsNullOrEmpty(diagJson))
+                {
+                    sb.Append(",\"diag\":").Append(diagJson);
+                }
+            }
+            sb.Append('}');
+            return sb.ToString();
         }
 
         /// <summary>

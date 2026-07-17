@@ -1,0 +1,32 @@
+{
+  "name": "YorimashiModder.MenuOrganizer.Editor",
+  "rootNamespace": "Yorimashi.Modder.Editor.MenuOrganizer",
+  "references": [
+    "YorimashiModder.Editor",
+    "nadena.dev.ndmf",
+    "nadena.dev.ndmf.runtime",
+    "nadena.dev.modular-avatar.core",
+    "nadena.dev.modular-avatar.editor",
+    "VRC.SDK3A",
+    "VRC.SDK3A.Editor",
+    "VRCSDKBase",
+    "VRCSDKBase.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [
+    {
+      "name": "nadena.dev.ndmf",
+      "expression": "1.0.0",
+      "define": "YORIMASHI_MENU_ORGANIZER_ENABLED"
+    }
+  ],
+  "noEngineReferences": false
+}
